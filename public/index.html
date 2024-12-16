@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Plant Recognition</title>
+    <script src="node_modules/aframe/dist/aframe.min.js"></script>
+    <script src="public/aframe-ar.js"></script>
+</head>
+<body>
+    <video id="video" width="640" height="480" autoplay></video>
+    <button id="scanButton">Scan</button>
+    <div id="result"></div>
+    <script>
+        const API_KEY = '2b10XRlXiLloNUcCgqm63eE0O'; // Your actual API key
+        const PROJECT = 'all';
+        const ORGANS = ['leaf', 'flower', 'fruit', 'bark', 'auto']; // All organ types
+
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                });
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                alert('Please allow camera access for the camera feature to work.');
+            }
+        }
+
+        async function identifyPlant(file) {
+            const apiUrl = `https://my-api.plantnet.org/v2/identify/${PROJECT}?include-related-images=true&no-reject=false&nb-results=10&lang=en&type=kt&api-key=${API_KEY}`;
+            try {
+                console.log('Sending request to PlantNet API with image');
+                const formData = new FormData();
+                // Loop through each file and append it for each organ type
+                ORGANS.forEach(organ => {
+                    formData.append('images', file);
+                    formData.append('organs', organ);
+                });
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('API Response:', errorData);
+                    return errorData;
+                }
+                const data = await response.json();
+                console.log('API Response:', data);
+                displayResult(data);
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        function captureImage() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(async (blob) => {
+                const result = await identifyPlant(blob);
+                displayResult(result);
+            }, 'image/jpeg');
+        }
+
+        document.getElementById('scanButton').addEventListener('click', async () => {
+            captureImage();
+        });
+
+        function displayResult(result) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            if (result && result.results && result.results.length > 0) {
+                // Find the result with the highest score
+                const bestResult = result.results.reduce((max, r) => (r.score > max.score ? r : max), result.results[0]);
+                const plant = bestResult;
+
+                resultDiv.innerHTML = `
+                    <h2>Plant Identification Result</h2>
+                    <p><strong>Scientific Name:</strong> ${plant.species.scientificName}</p>
+                    <p><strong>Common Names:</strong> ${plant.species.commonNames.join(', ')}</p>
+                    <p><strong>Family:</strong> ${plant.species.family.scientificName}</p>
+                    <img src="${plant.images[0].url.m}" alt="Plant Image">
+                `;
+            } else {
+                resultDiv.innerHTML = '<p>No plant identified.</p>';
+            }
+        }
+
+        async function main() {
+            await setupCamera();
+        }
+
+        main();
+    </script>
+</body>
+</html>
